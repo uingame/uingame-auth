@@ -1,26 +1,77 @@
 const fs = require('fs')
 const path = require('path')
-const rp = require('request-promise')
-const SamlStrategy = require('passport-saml').Strategy
-const {parse: parseSamlMetadata} = require('idp-metadata-parser')
+const { Strategy: SamlStrategy } = require('@node-saml/passport-saml')
 const config = require('./config')
+
+/**
+ * Fetches and parses SAML IdP metadata XML
+ */
+async function fetchMetadata(metadataUrl) {
+  console.log('Fetching Identity Provider metadata from:', metadataUrl)
+  
+  const response = await fetch(metadataUrl, {
+    method: 'GET',
+    headers: {
+      'Accept': 'application/xml, text/xml'
+    }
+  })
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch metadata: ${response.status} ${response.statusText}`)
+  }
+
+  const xml = await response.text()
+  
+  // Parse XML to extract IdP SSO URL and certificate
+  // Handle namespaced XML (md:, ds: prefixes)
+  // Look for SingleSignOnService with HTTP-POST binding (preferred) or HTTP-Redirect
+  const idpSsoMatch = xml.match(/<md:SingleSignOnService[^>]*Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST"[^>]*Location="([^"]+)"/i) ||
+                      xml.match(/<md:SingleSignOnService[^>]*Location="([^"]+)"/i) ||
+                      xml.match(/<[^:]*:SingleSignOnService[^>]*Location="([^"]+)"/i)
+  
+  // Look for X509Certificate (can be in ds: namespace or without)
+  const certMatch = xml.match(/<ds:X509Certificate>([^<]+)<\/ds:X509Certificate>/i) ||
+                    xml.match(/<[^:]*:X509Certificate>([^<]+)<\/[^:]*:X509Certificate>/i) ||
+                    xml.match(/<X509Certificate>([^<]+)<\/X509Certificate>/i)
+  
+  if (!idpSsoMatch) {
+    console.error('XML snippet:', xml.substring(0, 500))
+    throw new Error('Invalid SAML metadata: missing IdP SSO URL (SingleSignOnService not found)')
+  }
+  
+  if (!certMatch) {
+    console.error('XML snippet:', xml.substring(0, 500))
+    throw new Error('Invalid SAML metadata: missing IdP certificate (X509Certificate not found)')
+  }
+
+  const idpSsoTargetUrl = idpSsoMatch[1]
+  // Clean certificate (remove whitespace, newlines) and format properly
+  const certContent = certMatch[1].replace(/\s+/g, '').trim()
+  const idpCert = `-----BEGIN CERTIFICATE-----\n${certContent}\n-----END CERTIFICATE-----`
+
+  return {
+    idpSsoTargetUrl,
+    idpCert
+  }
+}
 
 async function createSamlStartegy() {
   console.log('Getting Identity Provider metadata...')
-  const rawMetadata = await rp({uri: config.idpMetadataUrl, rejectUnauthorized: false})
-  const metadata = await parseSamlMetadata(rawMetadata)
+  const metadata = await fetchMetadata(config.idpMetadataUrl)
   console.log('Identity Provider metadata parsed sucessfully')
+  // Build callback URL (required by @node-saml/passport-saml)
+  const callbackUrl = `https://${config.host}/login/callback`
+
   return new SamlStrategy({
-    path: '/login/callback',
-    identifierFormat: 'urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified',
-    protocol: 'https://',
-    host: config.host,
+    callbackUrl: callbackUrl,
     entryPoint: metadata.idpSsoTargetUrl,
     issuer: config.issuer,
+    idpCert: metadata.idpCert,  // Required by @node-saml/passport-saml
+    privateKey: config.privateKey,
     decryptionPvk: config.privateKey,
     privateCert: config.privateKey,
-    cert: metadata.idpCert,
-    validateInResponseTo: false,
+    identifierFormat: 'urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified',
+    validateInResponseTo: 'never',  // Changed from false to 'never' (new API requires string)
     disableRequestedAuthnContext: true,
     passReqToCallback: true,
     additionalParams: {'RelayState': 'default'}

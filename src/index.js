@@ -1,16 +1,20 @@
+// Load .env file only in non-production environments (staging/development)
+if (process.env.NODE_ENV !== 'production') {
+  require('dotenv').config()
+}
+
 const express = require('express')
 const bodyParser = require('body-parser')
+const cookieParser = require('cookie-parser')
 const querystring = require('query-string')
 const randtoken = require('rand-token')
 const passport = require('passport')
 const cors = require('cors')
-//! temporary
-const rp = require('request-promise')
-const { parse: parseSamlMetadata } = require('idp-metadata-parser')
 
 const createSamlStartegy = require('./samlAuthenticationStrategy')
 const redis = require('./redis')
-const config = require('./config');
+const config = require('./config')
+const lrs = require('./lrs')
 
 
 init().catch(err => {
@@ -21,6 +25,12 @@ init().catch(err => {
 async function init() {
   const app = express()
   app.use(bodyParser.urlencoded({ extended: true }))
+  app.use(bodyParser.json())
+  
+  // Cookie parser for LRS session tracking
+  if (config.lrsCookieSecret) {
+    app.use(cookieParser(config.lrsCookieSecret))
+  }
 
   passport.serializeUser(function (user, done) {
     done(null, user);
@@ -112,8 +122,98 @@ async function init() {
     }
   )
 
+  // LRS connect endpoint - called by Wix after license confirmation
+  const lrsCorsOptions = {
+    origin: [config.corsOrigin, 'https://space.uingame.co.il'],
+    credentials: true
+  }
+
+  app.options('/lrs/connect', cors(lrsCorsOptions))
+
+  app.post('/lrs/connect',
+    cors(lrsCorsOptions),
+    async (req, res) => {
+      try {
+        const { token, pageUrl, buttonId, clientTs } = req.body
+
+        if (!token) {
+          return res.status(400).json({ ok: false, error: 'Token required' })
+        }
+
+        // Validate token and get user (server-side verification)
+        const keyName = `TOKEN:${token}`
+        let user
+        try {
+          const raw = await redis.get(keyName)
+          if (!raw) {
+            return res.status(401).json({ ok: false, error: 'Invalid or expired token' })
+          }
+          user = JSON.parse(raw)
+        } catch (err) {
+          console.error('[LRS Connect] Token lookup error:', err.message)
+          return res.status(500).json({ ok: false, error: 'Internal error' })
+        }
+
+        // Emit connect event
+        console.log('[LRS Connect] Calling emitConnect for user:', user.id || user.email || 'unknown')
+        const result = await lrs.emitConnect(user, { pageUrl, buttonId, clientTs })
+        console.log('[LRS Connect] emitConnect result:', { success: result.success, sessionId: result.sessionId, skipped: result.skipped, error: result.error })
+
+        // Set session cookie for logout tracking (even if LRS send failed)
+        if (result.actorId && config.lrsCookieSecret) {
+          const sessionData = {
+            actorId: result.actorId,
+            actor: result.actor,
+            sessionId: result.sessionId,
+            loginAt: result.loginAt || Date.now()
+          }
+          res.cookie('lrs_session', JSON.stringify(sessionData), {
+            domain: '.uingame.co.il',
+            path: '/',
+            httpOnly: true,
+            secure: true,
+            signed: true,
+            sameSite: 'none',
+            maxAge: 86400000 // 24 hours
+          })
+        }
+
+        res.json({ ok: true, sessionId: result.sessionId })
+      } catch (err) {
+        console.error('[LRS Connect] Unexpected error:', err.message)
+        res.status(200).json({ ok: true, warning: 'LRS error' })
+      }
+    }
+  )
+
   app.get('/logout',
-    (req, res) => {
+    async (req, res) => {
+      // Emit LRS disconnect event if session cookie exists
+      if (config.lrsEnabled && config.lrsCookieSecret && req.signedCookies) {
+        const rawSession = req.signedCookies.lrs_session
+        if (rawSession) {
+          try {
+            const sessionData = JSON.parse(rawSession)
+            // Fire-and-forget - don't block logout
+            lrs.emitDisconnect(sessionData).catch(err => {
+              console.error('[LRS Logout] Error:', err.message)
+            })
+          } catch (err) {
+            console.warn('[LRS Logout] Invalid session cookie:', err.message)
+          }
+
+          // Clear the session cookie
+          res.clearCookie('lrs_session', {
+            domain: '.uingame.co.il',
+            path: '/',
+            httpOnly: true,
+            secure: true,
+            signed: true,
+            sameSite: 'none'
+          })
+        }
+      }
+
       let referer = req.get('Referer') != undefined ? req.get('Referer') : (!!req.query.rf != undefined && req.query.rf == 'space') ? 'https://space.uingame.co.il/' : 'https://www.uingame.co.il/' ;
       res.redirect(`${config.logoutUrl}?logoutURL=${referer}`)
     }

@@ -1,3 +1,6 @@
 node_modules
 *.pem
 certs
+.env
+.env.local
+.env.*.local
