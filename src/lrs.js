@@ -7,11 +7,11 @@ const MOE_BASE = 'https://lxp.education.gov.il/xapi/moe'
 const VERBS = {
   enter: {
     id: `${MOE_BASE}/verbs/enter`,
-    display: { 'en-US': 'entered', 'he-IL': 'נכנס' }
+    display: { 'en': 'entered', 'he': 'נכנס' }
   },
   exit: {
     id: `${MOE_BASE}/verbs/exit`,
-    display: { 'en-US': 'exited', 'he-IL': 'יצא' }
+    display: { 'en': 'exited', 'he': 'יצא' }
   }
 }
 
@@ -149,7 +149,7 @@ async function getAccessToken() {
     expiresAt: Date.now() + (expiresIn * 1000) - 60000 // 60s buffer
   }
 
-  console.log('[LRS] OAuth token fetched, expires in', expiresIn, 's')
+  console.log('[LRS] ✅ OAuth token fetched successfully, expires in', expiresIn, 's')
   return cachedToken.accessToken
 }
 
@@ -173,7 +173,7 @@ function buildObject() {
     id: config.lrsActivityId,
     definition: {
       type: ACTIVITY_TYPES.lms,
-      name: { 'he-IL': 'UINGame' }
+      name: { 'he': 'UINGame' }
     }
   }
 }
@@ -197,8 +197,8 @@ function buildContext(sessionId, includeGrouping = true) {
       id: config.lrsActivityId,
       definition: {
         type: ACTIVITY_TYPES.lms,
-        name: { 'he-IL': 'UINGame', 'en-US': 'UINGame', 'ar-SA': 'UINGame' },
-        description: { 'he-IL': 'מערכת UINGame', 'en-US': 'UINGame System', 'ar-SA': 'نظام UINGame' }
+        name: { 'he': 'UINGame', 'en': 'UINGame', 'ar': 'UINGame' },
+        description: { 'he': 'מערכת UINGame', 'en': 'UINGame System', 'ar': 'نظام UINGame' }
       }
     })
     
@@ -213,6 +213,8 @@ function buildContext(sessionId, includeGrouping = true) {
         type: ACTIVITY_TYPES.course
       }
     })
+    
+    console.log('[LRS] Context grouping - LMS:', config.lrsActivityId, 'eCat:', config.lrsEcatItemUri)
     
     context.contextActivities = { grouping }
     
@@ -281,6 +283,12 @@ function buildExitStatement(actor, sessionId, durationMs) {
 async function sendStatement(statement, isRetry = false) {
   try {
     console.log('[LRS] Sending statement to:', `${config.lrsBaseUrl}/xAPI/statements`)
+    console.log('[LRS] Statement structure - actor:', statement.actor.account.name, 'verb:', statement.verb.id, 'object:', statement.object.id)
+    if (statement.context?.contextActivities?.grouping) {
+      const groupingIds = statement.context.contextActivities.grouping.map(g => g.id)
+      console.log('[LRS] Context grouping IDs:', groupingIds)
+    }
+    
     const token = await getAccessToken()
     const statementsUrl = `${config.lrsBaseUrl}/xAPI/statements`
 
@@ -307,7 +315,27 @@ async function sendStatement(statement, isRetry = false) {
       throw new Error(`LRS statement send failed: ${response.status} ${errorText}`)
     }
 
-    console.log('[LRS] Statement sent successfully:', statement.id, statement.verb.id, 'status:', response.status)
+    // Read LRS response body
+    const responseText = await response.text()
+    let lrsResponse = null
+    try {
+      lrsResponse = responseText ? JSON.parse(responseText) : null
+    } catch (err) {
+      console.error('[LRS] Failed to parse LRS response:', err.message)
+      lrsResponse = responseText || '(empty)'
+    }
+
+    // Success logging for testing
+    console.log('========================================')
+    console.log('[LRS] ✅ REQUEST TO LRS PASSED SUCCESSFULLY')
+    console.log('[LRS]   Statement ID:', statement.id)
+    console.log('[LRS]   Verb:', statement.verb.id)
+    console.log('[LRS]   Actor:', statement.actor.account.name)
+    console.log('[LRS]   HTTP Status:', response.status)
+    console.log('[LRS]   LRS URL:', statementsUrl)
+    console.log('[LRS]   LRS Response:', JSON.stringify(lrsResponse))
+    console.log('========================================')
+    
     return { success: true }
   } catch (err) {
     console.error('[LRS] Statement send failed:', statement.id, 'error:', err.message, 'status:', err.statusCode || 'N/A')
@@ -417,7 +445,7 @@ async function emitConnect(user, meta = {}) {
       await setDedupe(actorId)
     }
 
-    return {
+    const returnValue = {
       success: result.success,
       sessionId,
       actorId,
@@ -425,6 +453,10 @@ async function emitConnect(user, meta = {}) {
       loginAt,
       error: result.error
     }
+    
+    console.log('[LRS] emitConnect returning:', JSON.stringify({ success: returnValue.success, sessionId: returnValue.sessionId, actorId: returnValue.actorId, hasActor: !!returnValue.actor }))
+    
+    return returnValue
   } catch (err) {
     console.error('[LRS] emitConnect failed:', err.message)
     return { success: false, error: err.message }
@@ -439,13 +471,17 @@ async function emitConnect(user, meta = {}) {
  */
 async function emitDisconnect(sessionData) {
   try {
+    console.log('[LRS] emitDisconnect called, enabled:', config.lrsEnabled, 'baseUrl:', config.lrsBaseUrl)
+    
     // Check if LRS is enabled
     if (!config.lrsEnabled) {
+      console.log('[LRS] LRS disabled, skipping disconnect')
       return { success: true, skipped: true }
     }
 
     // Check if LRS is configured
     if (!config.lrsBaseUrl || !config.lrsClientId) {
+      console.log('[LRS] Not configured, skipping disconnect (baseUrl:', config.lrsBaseUrl, 'clientId:', config.lrsClientId ? 'SET' : 'MISSING', ')')
       return { success: true, skipped: true }
     }
 
@@ -459,14 +495,25 @@ async function emitDisconnect(sessionData) {
 
     // Compute duration
     const durationMs = loginAt ? Date.now() - loginAt : 0
+    const durationSeconds = Math.floor(durationMs / 1000)
+
+    console.log('[LRS] Disconnect details - actorId:', actorId, 'sessionId:', sessionId, 'duration:', durationSeconds, 's')
 
     // Build and send statement
     const statement = buildExitStatement(actor, sessionId, durationMs)
+    console.log('[LRS] Built exit statement:', statement.id, 'for actor:', actorId)
     const result = await sendStatement(statement)
 
     // Clear dedupe key (best-effort)
     if (actorId) {
       await clearDedupe(actorId)
+      console.log('[LRS] Cleared dedupe key for actor:', actorId)
+    }
+
+    if (result.success) {
+      console.log('[LRS] ✅ Disconnect completed successfully')
+    } else {
+      console.error('[LRS] ❌ Disconnect failed:', result.error)
     }
 
     return { success: result.success, error: result.error }

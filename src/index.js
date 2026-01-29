@@ -157,9 +157,10 @@ async function init() {
         // Emit connect event
         console.log('[LRS Connect] Calling emitConnect for user:', user.id || user.email || 'unknown')
         const result = await lrs.emitConnect(user, { pageUrl, buttonId, clientTs })
-        console.log('[LRS Connect] emitConnect result:', { success: result.success, sessionId: result.sessionId, skipped: result.skipped, error: result.error })
+        console.log('[LRS Connect] emitConnect result:', { success: result.success, sessionId: result.sessionId, actorId: result.actorId, hasActor: !!result.actor, skipped: result.skipped, error: result.error })
 
         // Set session cookie for logout tracking (even if LRS send failed)
+        console.log('[LRS Connect] Checking cookie creation - actorId:', result.actorId, 'cookieSecret:', config.lrsCookieSecret ? 'SET' : 'NOT SET')
         if (result.actorId && config.lrsCookieSecret) {
           const sessionData = {
             actorId: result.actorId,
@@ -167,15 +168,32 @@ async function init() {
             sessionId: result.sessionId,
             loginAt: result.loginAt || Date.now()
           }
-          res.cookie('lrs_session', JSON.stringify(sessionData), {
-            domain: '.uingame.co.il',
+          
+          // Cookie options: adjust for localhost vs production
+          const isLocalhost = req.get('host').includes('localhost') || req.get('host').includes('127.0.0.1')
+          const cookieOptions = {
             path: '/',
             httpOnly: true,
-            secure: true,
             signed: true,
-            sameSite: 'none',
             maxAge: 86400000 // 24 hours
-          })
+          }
+          
+          if (isLocalhost) {
+            // Localhost: no domain, no secure, sameSite=lax
+            cookieOptions.sameSite = 'lax'
+            console.log('[LRS Connect] Setting cookie for LOCALHOST (dev mode)')
+          } else {
+            // Production: domain, secure, sameSite=none for cross-origin
+            cookieOptions.domain = '.uingame.co.il'
+            cookieOptions.secure = true
+            cookieOptions.sameSite = 'none'
+            console.log('[LRS Connect] Setting cookie for PRODUCTION (.uingame.co.il)')
+          }
+          
+          res.cookie('lrs_session', JSON.stringify(sessionData), cookieOptions)
+          console.log('[LRS Connect] ✅ Session cookie set with options:', cookieOptions)
+        } else {
+          console.warn('[LRS Connect] ⚠️ Session cookie NOT set - actorId:', result.actorId, 'cookieSecret:', config.lrsCookieSecret ? 'SET' : 'MISSING')
         }
 
         res.json({ ok: true, sessionId: result.sessionId })
@@ -188,33 +206,54 @@ async function init() {
 
   app.get('/logout',
     async (req, res) => {
+      console.log('[Logout] Logout request received')
+      
       // Emit LRS disconnect event if session cookie exists
       if (config.lrsEnabled && config.lrsCookieSecret && req.signedCookies) {
         const rawSession = req.signedCookies.lrs_session
         if (rawSession) {
+          console.log('[LRS Logout] Session cookie found, parsing...')
           try {
             const sessionData = JSON.parse(rawSession)
+            console.log('[LRS Logout] Calling emitDisconnect for actor:', sessionData.actorId || 'unknown', 'sessionId:', sessionData.sessionId)
+            
             // Fire-and-forget - don't block logout
-            lrs.emitDisconnect(sessionData).catch(err => {
-              console.error('[LRS Logout] Error:', err.message)
+            lrs.emitDisconnect(sessionData).then(result => {
+              console.log('[LRS Logout] emitDisconnect result:', { success: result.success, skipped: result.skipped, error: result.error })
+            }).catch(err => {
+              console.error('[LRS Logout] emitDisconnect error:', err.message)
             })
           } catch (err) {
             console.warn('[LRS Logout] Invalid session cookie:', err.message)
           }
 
           // Clear the session cookie
-          res.clearCookie('lrs_session', {
-            domain: '.uingame.co.il',
+          const isLocalhost = req.get('host').includes('localhost') || req.get('host').includes('127.0.0.1')
+          const clearOptions = {
             path: '/',
             httpOnly: true,
-            secure: true,
-            signed: true,
-            sameSite: 'none'
-          })
+            signed: true
+          }
+          
+          if (!isLocalhost) {
+            clearOptions.domain = '.uingame.co.il'
+            clearOptions.secure = true
+            clearOptions.sameSite = 'none'
+          } else {
+            clearOptions.sameSite = 'lax'
+          }
+          
+          res.clearCookie('lrs_session', clearOptions)
+          console.log('[LRS Logout] Session cookie cleared')
+        } else {
+          console.log('[LRS Logout] No session cookie found')
         }
+      } else {
+        console.log('[LRS Logout] LRS not enabled or not configured for logout tracking')
       }
 
       let referer = req.get('Referer') != undefined ? req.get('Referer') : (!!req.query.rf != undefined && req.query.rf == 'space') ? 'https://space.uingame.co.il/' : 'https://www.uingame.co.il/' ;
+      console.log('[Logout] Redirecting to:', `${config.logoutUrl}?logoutURL=${referer}`)
       res.redirect(`${config.logoutUrl}?logoutURL=${referer}`)
     }
   )

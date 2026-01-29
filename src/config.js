@@ -32,7 +32,7 @@ module.exports = {
   lrsEnabled: process.env.LRS_ENABLED === 'true',  // default: false (safe until configured)
   lrsActivityId: process.env.LRS_ACTIVITY_ID || 'https://www.uingame.co.il',
   lrsEcatItemUri: process.env.LRS_ECAT_ITEM_URI || undefined,  // optional - obtain from MoE if required
-  lrsDedupeTtl: parseInt(process.env.LRS_DEDUPE_TTL, 10) || 300,  // default: 5 minutes
+  lrsDedupeTtl: parseInt(process.env.LRS_DEDUPE_TTL, 10) || 20,  // default: 20 seconds
   lrsLogUserKeys: process.env.LRS_LOG_USER_KEYS === 'true',  // default: false
 
   // MUST configure (no defaults) - required when LRS_ENABLED=true
