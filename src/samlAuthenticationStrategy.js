@@ -65,14 +65,34 @@ async function createSamlStartegy() {
   // Build callback URL (required by @node-saml/passport-saml)
   const callbackUrl = `https://${config.host}/login/callback`
 
+  // Try to validate private key, skip signing if invalid
+  let privateKeyOptions = {}
+  if (config.privateKey) {
+    try {
+      const crypto = require('crypto')
+      crypto.createPrivateKey(config.privateKey)
+      // Key is valid, use it for signing
+      privateKeyOptions = {
+        privateKey: config.privateKey,
+        decryptionPvk: config.privateKey,
+        signatureAlgorithm: 'sha256'
+      }
+      console.log('[SAML] Private key is valid, signing enabled')
+    } catch (err) {
+      console.warn('[SAML] Private key is invalid, signing DISABLED:', err.message)
+      console.warn('[SAML] Continuing without request signing (less secure)')
+    }
+  } else {
+    console.warn('[SAML] No private key configured, signing disabled')
+  }
+
   return new SamlStrategy({
     callbackUrl: callbackUrl,
     entryPoint: metadata.idpSsoTargetUrl,
     issuer: config.issuer,
     idpCert: metadata.idpCert,  // Required by @node-saml/passport-saml
-    privateKey: config.privateKey,
-    decryptionPvk: config.privateKey,
-    privateCert: config.privateKey,
+    ...privateKeyOptions,  // Only include key options if key is valid
+    wantAuthnRequestsSigned: false,  // Don't require signed requests
     identifierFormat: 'urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified',
     validateInResponseTo: 'never',  // Changed from false to 'never' (new API requires string)
     disableRequestedAuthnContext: true,
