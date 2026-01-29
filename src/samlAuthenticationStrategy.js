@@ -32,29 +32,37 @@ async function fetchMetadata(metadataUrl) {
                       xml.match(/<md:SingleSignOnService[^>]*Location="([^"]+)"/i) ||
                       xml.match(/<[^:]*:SingleSignOnService[^>]*Location="([^"]+)"/i)
   
-  // Look for X509Certificate (can be in ds: namespace or without)
-  const certMatch = xml.match(/<ds:X509Certificate>([^<]+)<\/ds:X509Certificate>/i) ||
-                    xml.match(/<[^:]*:X509Certificate>([^<]+)<\/[^:]*:X509Certificate>/i) ||
-                    xml.match(/<X509Certificate>([^<]+)<\/X509Certificate>/i)
+  // Look for ALL X509Certificates (MoE has multiple signing certs)
+  // Match all certificate contents regardless of namespace prefix
+  const certRegex = /<(?:[^:]*:)?X509Certificate>([^<]+)<\/(?:[^:]*:)?X509Certificate>/gi
+  const certMatches = [...xml.matchAll(certRegex)]
   
   if (!idpSsoMatch) {
     console.error('XML snippet:', xml.substring(0, 500))
     throw new Error('Invalid SAML metadata: missing IdP SSO URL (SingleSignOnService not found)')
   }
   
-  if (!certMatch) {
+  if (certMatches.length === 0) {
     console.error('XML snippet:', xml.substring(0, 500))
     throw new Error('Invalid SAML metadata: missing IdP certificate (X509Certificate not found)')
   }
 
   const idpSsoTargetUrl = idpSsoMatch[1]
-  // Clean certificate (remove whitespace, newlines) and format properly
-  const certContent = certMatch[1].replace(/\s+/g, '').trim()
-  const idpCert = `-----BEGIN CERTIFICATE-----\n${certContent}\n-----END CERTIFICATE-----`
+  
+  // Extract ALL certificates and format them properly
+  // The library accepts an array of certificates for signature validation
+  const idpCerts = certMatches.map(match => {
+    const certContent = match[1].replace(/\s+/g, '').trim()
+    return `-----BEGIN CERTIFICATE-----\n${certContent}\n-----END CERTIFICATE-----`
+  })
+  
+  // Remove duplicates
+  const uniqueCerts = [...new Set(idpCerts)]
+  console.log(`[SAML] Found ${uniqueCerts.length} unique IdP certificates in metadata`)
 
   return {
     idpSsoTargetUrl,
-    idpCert
+    idpCert: uniqueCerts  // Array of all certificates
   }
 }
 
