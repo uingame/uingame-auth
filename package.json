@@ -2,7 +2,7 @@
   "name": "uingame-auth",
   "version": "1.1.0",
   "engines": {
-    "node": "20.x"
+    "node": "18.x"
   },
   "description": "Authenication Server for UINGame",
   "main": "src/index.js",
