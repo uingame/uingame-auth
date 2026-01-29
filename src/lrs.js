@@ -1,3 +1,6 @@
+// Polyfill fetch for Node 16
+require('./fetch-polyfill')
+
 const { v4: uuidv4 } = require('uuid')
 const config = require('./config')
 const redis = require('./redis')

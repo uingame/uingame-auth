@@ -1,3 +1,6 @@
+// Polyfill fetch for Node 16
+require('./fetch-polyfill')
+
 const fs = require('fs')
 const path = require('path')
 const { Strategy: SamlStrategy } = require('@node-saml/passport-saml')
