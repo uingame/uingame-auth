@@ -7,6 +7,32 @@ const redis = require('./redis')
 
 const MOE_BASE = 'https://lxp.education.gov.il/xapi/moe'
 
+// Timeout for LRS requests (2 seconds) - prevents blocking user flow if LRS is unreachable
+const LRS_TIMEOUT_MS = 2000
+
+/**
+ * Fetch with timeout using AbortController
+ */
+async function fetchWithTimeout(url, options = {}) {
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), LRS_TIMEOUT_MS)
+  
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal
+    })
+    clearTimeout(timeoutId)
+    return response
+  } catch (err) {
+    clearTimeout(timeoutId)
+    if (err.name === 'AbortError') {
+      throw new Error(`Request timeout after ${LRS_TIMEOUT_MS}ms`)
+    }
+    throw err
+  }
+}
+
 const VERBS = {
   enter: {
     id: `${MOE_BASE}/verbs/enter`,
@@ -132,7 +158,7 @@ async function getAccessToken() {
     formData.append('scope', config.lrsScope)
   }
 
-  const response = await fetch(tokenUrl, {
+  const response = await fetchWithTimeout(tokenUrl, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded'
@@ -296,7 +322,7 @@ async function sendStatement(statement, isRetry = false) {
     const statementsUrl = `${config.lrsBaseUrl}/xAPI/statements`
 
     console.log('[LRS] POST request to LRS:', statementsUrl, 'statement ID:', statement.id, 'verb:', statement.verb.id)
-    const response = await fetch(statementsUrl, {
+    const response = await fetchWithTimeout(statementsUrl, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`,
