@@ -20,9 +20,8 @@ module.exports = {
   idpMetadataUrl: process.env.IDP_METADATA_URL || 'https://lgn.edu.gov.il/nidp/saml2/metadata',
   logoutUrl: process.env.LOGOUT_URL || 'https://lgn.edu.gov.il/nidp/jsp/logoutSuccess.jsp',
   issuer: 'http://auth.uingame.co.il',
-  // Normalize newlines: Heroku may store as literal \n instead of actual newlines
-  privateKey: process.env.SAML_PRIVATE_KEY?.replace(/\\n/g, '\n'),
-  certificate: process.env.SAML_CERT?.replace(/\\n/g, '\n'),
+  privateKey: process.env.SAML_PRIVATE_KEY,
+  certificate: process.env.SAML_CERT,
 
   // For Getting an SSL Certificate
   acmeChallengeToken: process.env.ACME_CHALLENGE_TOKEN,

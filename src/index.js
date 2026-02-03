@@ -44,56 +44,29 @@ async function init() {
 
   app.get('/login',
     async (req, res, next) => {
-      console.log('[Login] Login request received')
       let userIP = req.headers['x-forwarded-for'] || req.ip;
       if (userIP.includes(',')) {
         userIP = userIP.split(',')[0].trim();
       }
       let referer = req.get('Referer') != undefined ? req.get('Referer') : (!!req.query.rf != undefined && req.query.rf == 'space') ? 'https://space.uingame.co.il/' : 'https://www.uingame.co.il/' ;
-      console.log('[Login] User IP:', userIP, 'Referer:', referer)
       try {
         await redis.set(userIP, JSON.stringify({referer}));
         await redis.expire(userIP, 3600 * 24);
       }
       catch (err) {
-        console.error(`[Login] Error while saving in redis: ${err}`)
+        console.error(`Error while saving in redis: ${err}`)
         res.redirect('/login/fail')
       }
       req.query.RelayState = req.params.referer = {referer};
-      console.log('[Login] Initiating SAML authentication...')
       passport.authenticate('saml', {
         failureRedirect: '/login/fail',
         additionalParams: { callbackReferer: referer }
-      })(req, res, (err) => {
-        if (err) {
-          console.error('[Login] SAML authentication error:', err.message)
-          console.error('[Login] Error details:', JSON.stringify(err, Object.getOwnPropertyNames(err), 2))
-          return next(err)
-        }
-        next()
-      });
+      })(req, res, next);
     }
   );
 
   app.post('/login/callback',
-    (req, res, next) => {
-      console.log('[Callback] SAML callback received')
-      passport.authenticate('saml', (err, user, info) => {
-        if (err) {
-          console.error('[Callback] SAML validation error:', err.message)
-          console.error('[Callback] Error stack:', err.stack)
-          console.error('[Callback] Full error:', JSON.stringify(err, Object.getOwnPropertyNames(err), 2))
-          return res.redirect('/login/fail')
-        }
-        if (!user) {
-          console.error('[Callback] No user returned. Info:', JSON.stringify(info))
-          return res.redirect('/login/fail')
-        }
-        console.log('[Callback] SAML validation successful, user:', user.id || user.displayName || 'unknown')
-        req.user = user
-        next()
-      })(req, res, next)
-    },
+    passport.authenticate('saml', { failureRedirect: '/login/fail' }),
     async (req, res, next) => {
       let userIP = req.headers['x-forwarded-for'] || req.ip;
       if (userIP.includes(',')) {
@@ -314,10 +287,8 @@ async function init() {
 
   //general error handler
   app.use(function (err, req, res, next) {
-    console.error("[Error Handler] Fatal error:", JSON.stringify(err, Object.getOwnPropertyNames(err), 2))
-    console.error("[Error Handler] Stack:", err.stack)
-    console.error("[Error Handler] Message:", err.message)
-    res.status(500).send('Internal Server Error')
+    console.log("Fatal error: " + JSON.stringify(err))
+    next(err)
   })
 
   app.listen(config.port, () => {
