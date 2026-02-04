@@ -60,13 +60,14 @@ async function init() {
       req.query.RelayState = req.params.referer = {referer};
       passport.authenticate('saml', {
         failureRedirect: '/login/fail',
+        session: false,
         additionalParams: { callbackReferer: referer }
       })(req, res, next);
     }
   );
 
   app.post('/login/callback',
-    passport.authenticate('saml', { failureRedirect: '/login/fail' }),
+    passport.authenticate('saml', { failureRedirect: '/login/fail', session: false }),
     async (req, res, next) => {
       let userIP = req.headers['x-forwarded-for'] || req.ip;
       if (userIP.includes(',')) {
