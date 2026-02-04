@@ -2,8 +2,17 @@
 require('./fetch-polyfill')
 
 const { v4: uuidv4 } = require('uuid')
+const { HttpsProxyAgent } = require('https-proxy-agent')
 const config = require('./config')
 const redis = require('./redis')
+
+// Create proxy agent for LRS requests (constant IP)
+let proxyAgent = null
+if (config.lrsProxyEnabled && config.lrsProxyHost && config.lrsProxyPort) {
+  const proxyUrl = `http://${config.lrsProxyUsername}:${config.lrsProxyPassword}@${config.lrsProxyHost}:${config.lrsProxyPort}`
+  proxyAgent = new HttpsProxyAgent(proxyUrl)
+  console.log('[LRS] Proxy configured:', config.lrsProxyHost + ':' + config.lrsProxyPort)
+}
 
 const MOE_BASE = 'https://lxp.education.gov.il/xapi/moe'
 
@@ -20,7 +29,8 @@ async function fetchWithTimeout(url, options = {}) {
   try {
     const response = await fetch(url, {
       ...options,
-      signal: controller.signal
+      signal: controller.signal,
+      agent: proxyAgent  // Use proxy for LRS requests (null if disabled)
     })
     clearTimeout(timeoutId)
     return response
