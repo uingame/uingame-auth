@@ -62,6 +62,23 @@ Available settings are:
 | ACME_CHALLENGE_TOKEN | Token for verifing domain ownerwhip using ACME HTTP Challenge | |
 | ACME_CHALLENGE_VALUE | Voken for verifing domain ownerwhip using ACME HTTP Challenge | |
 
+### LRS (MoE xAPI) Settings
+
+These variables are required for MoE Learning Record Store (LRS) integration:
+
+| Variable | Description | How to Obtain |
+| --- | --- | --- |
+| LRS_ENABLED | Enable/disable LRS integration | Set to `"true"` to enable |
+| LRS_BASE_URL | LRS endpoint URL | Staging: `https://lrs-stg.education.gov.il`<br>Production: `https://lrs.education.gov.il` |
+| LRS_CLIENT_ID | OAuth client ID | **Contact MoE integration team** - not specified in code |
+| LRS_CLIENT_SECRET | OAuth client secret | **Contact MoE integration team** - not specified in code |
+| LRS_SCOPE | OAuth scope | Staging: `lrs`<br>Production: `lrsprod` |
+| LRS_COOKIE_SECRET | Secret for signing session cookies | Generate with: `openssl rand -hex 16` |
+| LRS_ECAT_ITEM_URI | eCat item URI (optional) | **Obtain from MoE if required** - not specified in code |
+| LRS_LOG_USER_KEYS | Enable debug logging of user object keys | Set to `"true"` for staging debugging |
+
+**Note:** `LRS_CLIENT_ID`, `LRS_CLIENT_SECRET`, and `LRS_ECAT_ITEM_URI` must be obtained directly from the MoE integration team. The codebase does not specify the contact method, portal URL, or request process. Please contact your MoE integration contact for these credentials.
+
 ## Test Profiles:
 <table style="direction: rtl">
   <thead>
