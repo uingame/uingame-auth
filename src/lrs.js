@@ -16,8 +16,8 @@ if (config.lrsProxyEnabled && config.lrsProxyHost && config.lrsProxyPort) {
 
 const MOE_BASE = 'https://lxp.education.gov.il/xapi/moe'
 
-// Timeout for LRS requests (2 seconds) - prevents blocking user flow if LRS is unreachable
-const LRS_TIMEOUT_MS = 2000
+// Timeout for LRS requests (5 seconds) - allows time for proxy connection
+const LRS_TIMEOUT_MS = 5000
 
 /**
  * Fetch with timeout using AbortController
