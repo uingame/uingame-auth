@@ -45,9 +45,9 @@ module.exports = {
   lrsCookieSecret: process.env.LRS_COOKIE_SECRET,  // for signing session cookie
 
   // LRS Proxy Settings (for constant IP)
-  lrsProxyHost: process.env.LRS_PROXY_HOST || '45.90.48.200',
-  lrsProxyPort: process.env.LRS_PROXY_PORT || '12323',
-  lrsProxyUsername: process.env.LRS_PROXY_USERNAME || '14ad6fd08dc38',
-  lrsProxyPassword: process.env.LRS_PROXY_PASSWORD || '2fe3042781',
+  lrsProxyHost: process.env.LRS_PROXY_HOST || '',
+  lrsProxyPort: process.env.LRS_PROXY_PORT || '',
+  lrsProxyUsername: process.env.LRS_PROXY_USERNAME || '',
+  lrsProxyPassword: process.env.LRS_PROXY_PASSWORD || '',
   lrsProxyEnabled: process.env.LRS_PROXY_ENABLED !== 'false'  // default: true (enabled)
 }
